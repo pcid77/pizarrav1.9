@@ -153,6 +153,7 @@ function parseTsvBoard(tsvRaw) {
       width: Number(r.width) || 320,
       height: Number(r.height) || (type === "timeline" ? 240 : 200),
       pillScale: Number(r.pillscale) || 1,
+      pillColor: r.pillcolor || "#7ef3ff",
       title: r.title || { note: "Nota", image: "Imagen", video: "Video", timeline: "Línea de tiempo" }[type] || "Nota",
       data: {},
     };
@@ -186,6 +187,7 @@ function applyImportedBoard(boardData) {
     title: n.title || { note: "Nota", image: "Imagen", video: "Video", timeline: "Línea de tiempo" }[n.type || "note"],
     data: n.data || {},
     pillScale: Number.isFinite(n.pillScale) ? n.pillScale : 1,
+    pillColor: typeof n.pillColor === "string" ? n.pillColor : "#7ef3ff",
   }));
 
   const validIds = new Set(nodes.map((n) => n.id));
@@ -221,6 +223,7 @@ async function addNode(type) {
     height: type === "timeline" ? 240 : 200,
     title: { note: "Nota", image: "Imagen", video: "Video", timeline: "Línea de tiempo" }[type],
     data: {},
+    pillColor: "#7ef3ff",
   };
 
   if (type === "note") base.data.text = prompt("Escribe tu nota:", "Idea principal") || "";
@@ -311,6 +314,7 @@ function renderBoard() {
   if (!board) return;
   els.canvas.innerHTML = "";
   els.connections.innerHTML = "";
+  els.connections.setAttribute("overflow", "visible");
 
   board.nodes.forEach((node) => {
     const el = els.nodeTemplate.content.firstElementChild.cloneNode(true);
@@ -323,6 +327,7 @@ function renderBoard() {
     el.querySelector(".title").textContent = node.title;
     if (state.connectFrom === node.id) el.classList.add("selected-for-connection");
     el.style.setProperty("--pill-scale", node.pillScale || 1);
+    el.style.setProperty("--pill-color", node.pillColor || "#7ef3ff");
 
     const content = el.querySelector(".content");
     if (node.type === "note") content.innerHTML = `<div class="note-pill" contenteditable="true">${escapeHtml(node.data.text || "")}</div>`;
@@ -355,8 +360,10 @@ function renderBoard() {
     const canResizePill = node.type === "note" || node.type === "timeline";
     const smallerBtn = el.querySelector(".pill-smaller");
     const biggerBtn = el.querySelector(".pill-bigger");
+    const colorBtn = el.querySelector(".pill-color");
     smallerBtn.style.display = canResizePill ? "inline-block" : "none";
     biggerBtn.style.display = canResizePill ? "inline-block" : "none";
+    colorBtn.style.display = canResizePill ? "inline-block" : "none";
     if (canResizePill) {
       smallerBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -367,6 +374,15 @@ function renderBoard() {
       biggerBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
         node.pillScale = Math.min(1.8, (node.pillScale || 1) + 0.1);
+        save();
+        renderBoard();
+      });
+
+      colorBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        const picked = prompt("Color de pildora (hex, por ejemplo #ffd54f):", node.pillColor || "#7ef3ff");
+        if (!picked) return;
+        node.pillColor = picked.trim();
         save();
         renderBoard();
       });
@@ -532,14 +548,49 @@ function drawConnection(conn, board) {
   const x2 = to.x + (to.width || 320) / 2;
   const y2 = to.y + (to.height || 200) / 2;
 
+  const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  group.setAttribute("class", "connection-group");
+  group.setAttribute("data-id", conn.id);
+
   const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
   line.setAttribute("class", "connection-line");
   line.setAttribute("x1", x1);
   line.setAttribute("y1", y1);
   line.setAttribute("x2", x2);
   line.setAttribute("y2", y2);
-  els.connections.append(line);
+
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+
+  const hit = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  hit.setAttribute("class", "connection-delete-hit");
+  hit.setAttribute("cx", midX);
+  hit.setAttribute("cy", midY);
+  hit.setAttribute("r", "10");
+  hit.setAttribute("title", "Borrar conexión");
+  hit.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    board.connections = board.connections.filter((c) => c.id !== conn.id);
+    save();
+    renderBoard();
+  });
+
+  const cross = document.createElementNS("http://www.w3.org/2000/svg", "text");
+  cross.setAttribute("class", "connection-delete-cross");
+  cross.setAttribute("x", midX);
+  cross.setAttribute("y", midY + 3);
+  cross.textContent = "×";
+  cross.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    board.connections = board.connections.filter((c) => c.id !== conn.id);
+    save();
+    renderBoard();
+  });
+
+  group.append(line, hit, cross);
+  els.connections.append(group);
 }
+
 
 function createBoard(name) {
   const id = crypto.randomUUID();
